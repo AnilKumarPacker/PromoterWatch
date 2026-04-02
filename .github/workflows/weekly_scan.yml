@@ -28,6 +28,7 @@ jobs:
           python -m pip install --upgrade pip
           # Added beautifulsoup4 and parsing engines
           pip install pandas requests beautifulsoup4 lxml html5lib
+          playwright install chromium --with-deps
 
       - name: Run Scanner
         run: python insider_scanner.py
