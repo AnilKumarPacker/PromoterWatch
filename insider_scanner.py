@@ -1,67 +1,59 @@
+import asyncio
+from playwright.async_api import async_playwright
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
-import os
+import io
 
-def fetch_trendlyne_data():
-    url = "https://trendlyne.com/equity/group-insider-trading-sast/"
-    
-    # Modern headers for 2026 to avoid bot detection
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1"
-    }
+async def fetch_insider_data():
+    async with async_playwright() as p:
+        # Launching a stealthy browser instance
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
 
-    try:
-        response = requests.get(url, headers=headers, timeout=20)
-        response.raise_for_status()
-
-        # Trendlyne usually serves standard HTML tables
-        # Using 'lxml' as the engine for speed and reliability
-        tables = pd.read_html(response.text, flavor='bs4')
-        
-        if not tables:
-            print("❌ No tables found on the page.")
+        print("🌐 Navigating to Screener.in...")
+        try:
+            # Screener is currently the most stable data source for this
+            await page.goto("https://www.screener.in/insider-trading/", wait_until="networkidle", timeout=60000)
+            
+            # Wait for the table to appear on the page
+            await page.wait_for_selector("table")
+            
+            # Get the HTML content of the table
+            table_html = await page.evaluate("document.querySelector('table').outerHTML")
+            
+            # Read the HTML into Pandas
+            df = pd.read_html(io.StringIO(table_html))[0]
+            await browser.close()
+            return df
+            
+        except Exception as e:
+            print(f"❌ Playwright Error: {e}")
+            await browser.close()
             return pd.DataFrame()
 
-        # The first table is usually the Insider Trading list
-        df = tables[0]
-        return df
-
-    except Exception as e:
-        print(f"❌ Error fetching Trendlyne: {e}")
-        return pd.DataFrame()
-
-def process_and_save(df):
+def process_data(df):
     if df.empty:
-        print("📭 DataFrame is empty. Skipping save.")
+        print("⚠️ No data fetched.")
         return
 
-    # Clean column names (Trendlyne often has leading/trailing spaces)
+    # Standardizing columns
     df.columns = [str(c).strip() for c in df.columns]
+    
+    # Filtering for 'Buy' or 'Acquisition' in the Description
+    # Screener's 2026 layout usually puts details in 'Description' or 'Mode'
+    buy_mask = df.astype(str).apply(lambda x: x.str.contains('Buy|Acquisition', case=False)).any(axis=1)
+    promoter_mask = df.astype(str).apply(lambda x: x.str.contains('Promoter', case=False)).any(axis=1)
+    
+    final_report = df[buy_mask & promoter_mask]
 
-    # Filter for Promoters and Buy/Acquisition
-    # In 2026, Trendlyne uses 'Client Category' and 'Action'
-    try:
-        mask = (
-            df['Client Category'].str.contains('Promoter', case=False, na=False) &
-            df['Action'].str.contains('Acquisition', case=False, na=False)
-        )
-        filtered_df = df[mask].copy()
-
-        if not filtered_df.empty:
-            filtered_df.to_csv("insider_report.csv", index=False)
-            print(f"✅ Found {len(filtered_df)} promoter buy transactions.")
-        else:
-            print("ℹ️ No promoter acquisitions found in today's data.")
-
-    except KeyError as e:
-        print(f"❌ Column naming mismatch: {e}")
-        print(f"Available columns: {df.columns.tolist()}")
+    if not final_report.empty:
+        final_report.to_csv("insider_report.csv", index=False)
+        print(f"✅ Found {len(final_report)} promoter trades. Saved to CSV.")
+    else:
+        print("ℹ️ No promoter buys found today.")
 
 if __name__ == "__main__":
-    data = fetch_trendlyne_data()
-    process_and_save(data)
+    data = asyncio.run(fetch_insider_data())
+    process_data(data)
