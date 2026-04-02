@@ -8,16 +8,20 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Optional: Forces all actions in this job to use Node 24 immediately
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      
     steps:
       - name: Checkout Code
-        # Updated from v3 to v4
-        uses: actions/checkout@v4
+        # Updated from v4 to v6
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        # Updated from v4 to v5
-        uses: actions/setup-python@v5
+        # Updated from v5 to v6
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.11' # Upgraded to a modern stable Python version
+          python-version: '3.11' 
 
       - name: Install Dependencies
         run: pip install pandas requests
@@ -26,8 +30,7 @@ jobs:
         run: python insider_scanner.py
 
       - name: Upload to Google Drive
-        # This community action is usually updated frequently. 
-        # If this specific one errors, check the creator's repo for a v2.
+        # Using the main branch usually pulls the latest compatibility updates
         uses: adityak74/google-drive-upload-git-action@main
         with:
           credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
