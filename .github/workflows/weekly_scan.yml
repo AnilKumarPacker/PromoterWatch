@@ -2,20 +2,22 @@ name: Weekly Insider Scan
 
 on:
   schedule:
-    - cron: '0 9 * * 1' # Runs every Monday at 9:00 AM UTC
-  workflow_dispatch:   # Allows manual trigger
+    - cron: '0 9 * * 1' 
+  workflow_dispatch:   
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        # Updated from v3 to v4
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        # Updated from v4 to v5
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.11' # Upgraded to a modern stable Python version
 
       - name: Install Dependencies
         run: pip install pandas requests
@@ -24,9 +26,11 @@ jobs:
         run: python insider_scanner.py
 
       - name: Upload to Google Drive
+        # This community action is usually updated frequently. 
+        # If this specific one errors, check the creator's repo for a v2.
         uses: adityak74/google-drive-upload-git-action@main
         with:
           credentials: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
           filename: insider_report.csv
           folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
-          overwrite: "false" # Set to true if you want to replace the same file
+          overwrite: "false"
