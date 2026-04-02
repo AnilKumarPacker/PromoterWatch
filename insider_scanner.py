@@ -7,28 +7,52 @@ LOOKBACK_DAYS = 7
 SIGNIFICANT_VALUE_CRITERIA = 5000000  # ₹50 Lakhs for 'High Conviction' flag
 
 def fetch_nse_insider_data():
-    """Fetches insider trading data from NSE's JSON endpoint."""
+    """Fetches insider trading data with robust session handling to bypass blocks."""
     url = "https://www.nseindia.com/api/corporates-pit"
     
-    # NSE requires specific headers to avoid being blocked
+    # 1. Use a very specific, modern User-Agent
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br"
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.nseindia.com/companies-listing/corporate-filings-insider-trading",
+        "X-Requested-With": "XMLHttpRequest"
     }
     
-    # Establish a session to handle cookies
     session = requests.Session()
-    session.get("https://www.nseindia.com", headers=headers) # Get initial cookies
+    session.headers.update(headers)
     
-    params = {
-        "index": "equities",
-        "from_date": (datetime.now() - timedelta(days=LOOKBACK_DAYS)).strftime("%d-%m-%Y"),
-        "to_date": datetime.now().strftime("%d-%m-%Y")
-    }
-    
-    response = session.get(url, headers=headers, params=params)
-    return response.json()['data']
+    # 2. CRITICAL: Hit the home page first to get a valid 'nsit' cookie
+    # Without this, the API will return 403 or 401.
+    try:
+        session.get("https://www.nseindia.com", timeout=15)
+        time.sleep(2) # Brief pause to mimic human behavior
+        
+        params = {
+            "index": "equities",
+            "from_date": (datetime.now() - timedelta(days=LOOKBACK_DAYS)).strftime("%d-%m-%Y"),
+            "to_date": datetime.now().strftime("%d-%m-%Y")
+        }
+        
+        # 3. Request the actual data
+        response = session.get(url, params=params, timeout=15)
+        
+        # 4. Error Handling: Check status before parsing JSON
+        if response.status_code != 200:
+            print(f"❌ Error: Received status code {response.status_code}")
+            print(f"Full response text (first 500 chars): {response.text[:500]}")
+            return []
+
+        return response.json().get('data', [])
+
+    except requests.exceptions.JSONDecodeError:
+        print("❌ Failed to decode JSON. NSE likely blocked this request.")
+        print(f"Response Content: {response.text[:500]}") # Help you see the HTML error
+        return []
+    except Exception as e:
+        print(f"❌ An unexpected error occurred: {e}")
+        return []
 
 def process_data(raw_data):
     df = pd.DataFrame(raw_data)
